@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; font-src 'self'" />
+  <title>Celar Chat</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ============================================== onboarding -->
+  <section id="view-onboarding" class="view" hidden>
+    <div class="onboard-wrap">
+      <header class="onboard-hero">
+        <svg class="logo hero-logo" width="64" height="64" viewBox="0 0 64 64" aria-label="Celar">
+          <circle cx="32" cy="32" r="30" fill="none" stroke="#d4b078" stroke-width="1.5"
+                  stroke-dasharray="2.5 4" opacity="0.55"/>
+          <circle cx="32" cy="32" r="22" fill="#d4b078"/>
+          <circle cx="32" cy="32" r="12" fill="#0d0a07"/>
+          <circle cx="32" cy="32" r="4.5" fill="#d4b078"/>
+        </svg>
+        <div class="kicker">CONFIDENTIAL MESSENGER <span class="kicker-strong">DESKTOP</span></div>
+        <h1 class="wordmark">CELAR <span class="wordmark-outline">CHAT</span></h1>
+        <p class="tagline">Seen by no one. Verified by <em class="gold">everyone.</em></p>
+        <div class="hero-metrics">
+          <div class="metric"><b>SEALED-BOX</b><span>E2E ENVELOPES</span></div>
+          <div class="metric"><b>25 WORDS</b><span>ONE RECOVERY PHRASE</span></div>
+          <div class="metric"><b>BCHAT</b><span>WIRE-COMPATIBLE</span></div>
+          <div class="metric"><b>ZERO</b><span>ACCOUNTS · SERVERS OF OURS</span></div>
+        </div>
+      </header>
+
+      <div id="onboard-choice" class="onboard-cards">
+        <button class="card card-action" id="btn-create-account">
+          <span class="card-index">01/</span>
+          <span class="card-title">CREATE ACCOUNT</span>
+          <span class="card-body">One click mints a complete account: a BChat ID, a Beldex wallet address, and the 25-word recovery phrase they both derive from.</span>
+          <span class="card-cta" id="create-cta">CREATE →</span>
+        </button>
+        <button class="card card-action" id="btn-choose-restore">
+          <span class="card-index">02/</span>
+          <span class="card-title">RESTORE FROM PHRASE</span>
+          <span class="card-body">Already have an account? Enter the 25 words and this machine re-derives the same ID and wallet, deterministically.</span>
+          <span class="card-cta">RESTORE →</span>
+        </button>
+      </div>
+      <div class="panel-error" id="choice-error"></div>
+
+      <form id="onboard-restore" class="onboard-panel" hidden>
+        <div class="panel-label">02/ RESTORE ACCOUNT</div>
+        <label class="field-label" for="input-mnemonic">RECOVERY PHRASE — 25 WORDS</label>
+        <textarea id="input-mnemonic" class="text-input phrase-input" rows="3" spellcheck="false"
+                  placeholder="word word word …"></textarea>
+        <label class="field-label" for="input-display-name">DISPLAY NAME — OPTIONAL, SHOWN TO PEERS</label>
+        <input id="input-display-name" class="text-input" maxlength="32" placeholder="anonymous" autocomplete="off" />
+        <div class="panel-actions">
+          <button type="button" class="btn btn-ghost" id="btn-onboard-back">← BACK</button>
+          <button type="submit" class="btn btn-solid" id="btn-onboard-go">RESTORE →</button>
+        </div>
+        <div class="panel-error" id="onboard-error"></div>
+      </form>
+
+      <div id="onboard-account" class="onboard-panel" hidden>
+        <div class="panel-label">ACCOUNT CREATED</div>
+        <label class="field-label">BCHAT ID — SHARE THIS SO OTHERS CAN MESSAGE YOU</label>
+        <div class="copyrow"><code class="mono" id="new-bchat-id">—</code><button type="button" class="btn btn-mini" data-copy="new-bchat-id">COPY</button></div>
+        <label class="field-label">BELDEX WALLET ADDRESS</label>
+        <div class="copyrow"><code class="mono" id="new-wallet">—</code><button type="button" class="btn btn-mini" data-copy="new-wallet">COPY</button></div>
+        <label class="field-label">RECOVERY PHRASE — 25 WORDS, IN ORDER</label>
+        <ol class="phrase-grid" id="phrase-grid"></ol>
+        <p class="panel-note warn">Write these 25 words down. They restore your ID <em>and</em> your wallet anywhere —
+           and anyone who has them can read every message ever sealed to this account.</p>
+        <div class="panel-actions">
+          <button type="button" class="btn btn-ghost" id="btn-copy-phrase">COPY PHRASE</button>
+          <button type="button" class="btn btn-solid" id="btn-phrase-done">I WROTE THEM DOWN — ENTER CHAT →</button>
+        </div>
+      </div>
+    </div>
+    <div class="marquee"><div class="marquee-inner" id="marquee-onboard"></div></div>
+  </section>
+
+  <!-- ============================================== main app -->
+  <section id="view-main" class="view" hidden>
+    <header class="topbar">
+      <div class="topbar-left">
+        <svg class="logo" width="26" height="26" viewBox="0 0 64 64" aria-hidden="true">
+          <circle cx="32" cy="32" r="30" fill="none" stroke="#d4b078" stroke-width="2"
+                  stroke-dasharray="2.5 4" opacity="0.55"/>
+          <circle cx="32" cy="32" r="22" fill="#d4b078"/>
+          <circle cx="32" cy="32" r="12" fill="#0d0a07"/>
+          <circle cx="32" cy="32" r="4.5" fill="#d4b078"/>
+        </svg>
+        <span class="brand">CELAR</span><span class="brand-sub">CHAT</span>
+      </div>
+      <div class="topbar-mid">
+        <span class="top-metric">OUTCOME <b>⟦ENCRYPTED⟧</b></span>
+        <span class="top-metric">ENVELOPE <b>SEALED-BOX</b></span>
+        <span class="top-metric" id="top-pool">POOL <b>—</b></span>
+      </div>
+      <div class="topbar-right">
+        <button class="idchip" id="btn-my-id" title="Show my identity">
+          <span class="dot" id="status-dot"></span>
+          <span id="status-text">OFFLINE</span>
+          <span class="idchip-id" id="my-short-id">—</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="side-head">
+          <span class="side-label">01/ CONVERSATIONS</span>
+          <button class="btn btn-mini" id="btn-add-convo">+ NEW</button>
+        </div>
+        <div class="convo-list" id="convo-list"></div>
+        <div class="side-foot">
+          <span class="side-foot-line">MEV <b>NONE</b> · GAS TIER <b>UNIFORM</b></span>
+        </div>
+      </aside>
+
+      <main class="chat">
+        <div id="chat-empty" class="chat-empty">
+          <div class="empty-kicker">02/ TRANSPORT</div>
+          <h2>No conversation selected.</h2>
+          <p>Every message is padded, signed, and sealed to the recipient's key before it leaves this machine.
+             Storage nodes carry ciphertext only.</p>
+          <button class="btn btn-solid" id="btn-empty-add">START A CONVERSATION →</button>
+        </div>
+
+        <div id="chat-pane" class="chat-pane" hidden>
+          <header class="chat-head">
+            <div class="chat-peer">
+              <span class="chat-peer-name" id="chat-peer-name">—</span>
+              <span class="chat-peer-id mono" id="chat-peer-id">—</span>
+            </div>
+            <div class="chat-head-actions">
+              <button class="btn btn-mini" id="btn-copy-peer">COPY ID</button>
+              <button class="btn btn-mini btn-danger" id="btn-remove-convo">REMOVE</button>
+            </div>
+          </header>
+          <div class="messages" id="messages"></div>
+          <form class="composer" id="composer">
+            <div class="composer-meta"><span>⟦ENCRYPTED⟧</span><span>**BOLD** · *ITALIC* · ~~STRIKE~~ · `CODE` · ``` BLOCK ``` · SHIFT+ENTER</span></div>
+            <div class="reply-banner" id="reply-banner" hidden>
+              <span class="reply-banner-text mono" id="reply-banner-text"></span>
+              <button type="button" class="btn btn-mini" id="btn-cancel-reply">CANCEL</button>
+            </div>
+            <div class="composer-preview" id="composer-preview" hidden>
+              <img class="composer-preview-thumb" id="composer-preview-thumb" alt="" hidden />
+              <div class="composer-preview-body">
+                <span class="msg-preview-title" id="composer-preview-title"></span>
+                <span class="msg-preview-desc" id="composer-preview-desc" hidden></span>
+                <span class="msg-preview-domain" id="composer-preview-domain"></span>
+              </div>
+              <button type="button" class="btn btn-mini" id="btn-dismiss-preview" title="Send without preview">✕</button>
+            </div>
+            <div class="attach-banner reply-banner" id="attach-banner" hidden>
+              <span class="reply-banner-text mono" id="attach-banner-text"></span>
+              <button type="button" class="btn btn-mini" id="btn-remove-attach">✕</button>
+            </div>
+            <div class="composer-row">
+              <button type="button" class="emoji-toggle" id="btn-attach" title="Attach a file (images any size, other files up to 45 KB)">📎</button>
+              <input type="file" id="file-input" hidden />
+              <button type="button" class="emoji-toggle" id="btn-emoji" title="Insert emoji">☺</button>
+              <textarea id="composer-input" rows="1" placeholder="Write a message…" spellcheck="true"></textarea>
+              <button type="submit" class="btn btn-solid" id="btn-send">SEND →</button>
+            </div>
+            <div class="emoji-panel" id="emoji-panel" hidden></div>
+          </form>
+        </div>
+      </main>
+    </div>
+
+    <div class="marquee"><div class="marquee-inner" id="marquee-main"></div></div>
+  </section>
+
+  <!-- ============================================== modals -->
+  <div class="modal-backdrop" id="modal-add" hidden>
+    <form class="modal" id="form-add">
+      <div class="panel-label">NEW CONVERSATION</div>
+      <label class="field-label" for="input-peer">BCHAT ID (bd + 64 HEX) OR BNS NAME (name.bdx)</label>
+      <input id="input-peer" class="text-input mono" autocomplete="off" spellcheck="false"
+             placeholder="bd… or yourname.bdx" />
+      <div class="panel-actions">
+        <button type="button" class="btn btn-ghost" data-close>CANCEL</button>
+        <button type="submit" class="btn btn-solid">ADD →</button>
+      </div>
+      <div class="panel-error" id="add-error"></div>
+    </form>
+  </div>
+
+  <div class="modal-backdrop" id="modal-id" hidden>
+    <div class="modal">
+      <div class="panel-label">YOUR IDENTITY</div>
+      <label class="field-label">BCHAT ID — SHARE THIS SO OTHERS CAN MESSAGE YOU</label>
+      <div class="copyrow"><code class="mono" id="id-bchat">—</code><button class="btn btn-mini" data-copy="id-bchat">COPY</button></div>
+      <label class="field-label">BELDEX WALLET ADDRESS</label>
+      <div class="copyrow"><code class="mono" id="id-wallet">—</code><button class="btn btn-mini" data-copy="id-wallet">COPY</button></div>
+      <label class="field-label" for="input-settings-name">DISPLAY NAME — SHOWN TO PEERS, BLANK TO CLEAR</label>
+      <div class="copyrow">
+        <input id="input-settings-name" class="text-input" maxlength="64" placeholder="anonymous" autocomplete="off" />
+        <button type="button" class="btn btn-mini" id="btn-save-name">SAVE</button>
+      </div>
+      <label class="field-label">RECOVERY PHRASE</label>
+      <div class="copyrow">
+        <code class="mono blurred" id="id-phrase" data-hidden="1">••••• ••••• ••••• •••••</code>
+        <button class="btn btn-mini" id="btn-reveal-phrase">REVEAL</button>
+      </div>
+      <p class="panel-note warn">The phrase restores your ID and wallet anywhere. Never send it to anyone.</p>
+      <label class="field-label">PRIVACY</label>
+      <label class="settings-row">
+        <input type="checkbox" id="chk-auto-unfurl" />
+        <span>AUTO-LOAD PREVIEWS FOR RECEIVED LINKS</span>
+      </label>
+      <p class="panel-note warn">Auto-loading contacts each linked site from this device as messages arrive,
+         so those sites can learn your IP address. Leave off for maximum privacy —
+         you can always load a preview per message.</p>
+      <div class="panel-actions">
+        <button type="button" class="btn btn-ghost" data-close>CLOSE</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
