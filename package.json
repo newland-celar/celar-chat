@@ -1,0 +1,71 @@
+{
+  "name": "celar-chat",
+  "version": "0.1.0",
+  "description": "Celar Chat — encrypted desktop messenger built on @bdxi/bchat-sdk, styled after celar.network.",
+  "private": true,
+  "main": "main.js",
+  "desktopName": "celar-chat",
+  "homepage": "https://celar.network",
+  "author": {
+    "name": "Newland",
+    "email": "newland@celar.network"
+  },
+  "scripts": {
+    "start": "electron .",
+    "sdk:build": "npm --prefix ../bchat-sdk run build",
+    "icon": "node scripts/make-icon.js",
+    "predist": "node scripts/make-icon.js",
+    "dist": "electron-builder --linux deb",
+    "predist:mac": "node scripts/make-icon.js",
+    "dist:mac": "electron-builder --mac"
+  },
+  "dependencies": {
+    "@bdxi/bchat-sdk": "file:../bchat-sdk",
+    "libsodium-wrappers-sumo": "0.7.15"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "network.celar.chat",
+    "productName": "Celar Chat",
+    "files": [
+      "main.js",
+      "preload.js",
+      "sdk-service.js",
+      "celar-protocol.js",
+      "renderer/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.social-networking",
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["arm64", "x64"]
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        "deb"
+      ],
+      "icon": "build/icon.png",
+      "syncDesktopName": true,
+      "category": "Network",
+      "maintainer": "newland@celar.network",
+      "synopsis": "Encrypted desktop messenger on the BChat network",
+      "desktop": {
+        "entry": {
+          "Name": "Celar Chat",
+          "Comment": "Seen by no one. Verified by everyone."
+        }
+      }
+    }
+  },
+  "allowScripts": {
+    "electron@31.7.7": true,
+    "electron-winstaller@5.4.0": true
+  }
+}

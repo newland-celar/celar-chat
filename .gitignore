@@ -1,0 +1,5 @@
+node_modules/
+dist/
+out/
+account*.json
+.bchat-cache/
