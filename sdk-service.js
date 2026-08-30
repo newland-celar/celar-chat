@@ -736,23 +736,37 @@ class ChatService {
     const existing = (target.reactions || []).some(r => r.from === 'you' && r.emoji === emoji);
     const action = existing ? 1 : 0; // 0 = react, 1 = remove
 
-    const timestamp = Date.now();
-    await this.sdk.sendMessage({
-      recipientPubKey: peerId,
-      payload: packStructured({
-        timestamp,
-        reaction: {
-          messageTimestamp: target.at,
-          author: target.direction === 'out' ? this.identity.bchatId : peerId,
-          emoji,
-          action,
-        },
-      }),
-      namespace: NAMESPACE,
-      timestampMs: timestamp,
-    });
-
+    // Optimistic: show the toggle immediately; deliver in the background and
+    // revert (with a toast) if the network send fails.
     this.applyReaction(peerId, target, { emoji, from: 'you', action });
+
+    const timestamp = Date.now();
+    void (async () => {
+      try {
+        await this.sdk.sendMessage({
+          recipientPubKey: peerId,
+          payload: packStructured({
+            timestamp,
+            reaction: {
+              messageTimestamp: target.at,
+              author: target.direction === 'out' ? this.identity.bchatId : peerId,
+              emoji,
+              action,
+            },
+          }),
+          namespace: NAMESPACE,
+          timestampMs: timestamp,
+        });
+      } catch (e) {
+        this.applyReaction(peerId, target, { emoji, from: 'you', action: action === 0 ? 1 : 0 });
+        this.emit({
+          type: 'toast',
+          text: `REACTION FAILED: ${String((e && e.message) || e).slice(0, 80)}`,
+          error: true,
+        });
+      }
+    })();
+
     return target;
   }
 
@@ -996,6 +1010,11 @@ class ChatService {
     this.store.displayName = value;
     this.scheduleSave();
     return value;
+  }
+
+  /** Total unread messages across all conversations, for the dock badge. */
+  getUnreadTotal() {
+    return Object.values(this.store.conversations).reduce((n, c) => n + (c.unread || 0), 0);
   }
 
   setSettings(partial) {
