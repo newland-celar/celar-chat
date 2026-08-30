@@ -138,11 +138,52 @@ function handleAppSideEffects(event) {
   }
 }
 
+/**
+ * Auto-update via GitHub Releases (electron-updater supports deb since v6.3:
+ * it downloads the new package and installs through pkexec on restart).
+ * Active only in packaged builds — `npm start` never checks.
+ */
+function initAutoUpdater() {
+  if (!app.isPackaged) return;
+  let autoUpdater;
+  try {
+    ({ autoUpdater } = require('electron-updater'));
+  } catch {
+    return; // dependency not installed; run without updates
+  }
+
+  const tell = (text, error) => {
+    if (win && !win.isDestroyed()) win.webContents.send('chat:event', { type: 'toast', text, error });
+  };
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.on('update-available', info => tell(`UPDATE ${info.version} — DOWNLOADING…`));
+  autoUpdater.on('error', () => {}); // offline or rate-limited: try again later, silently
+  autoUpdater.on('update-downloaded', async info => {
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'info',
+      title: 'Update ready',
+      message: `Celar Chat ${info.version} has been downloaded.`,
+      detail: 'Restart to install it. Installing a .deb update will ask for your system password.',
+      buttons: ['Restart now', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+    });
+    if (response === 0) autoUpdater.quitAndInstall();
+    else tell(`UPDATE ${info.version} READY — INSTALLS ON NEXT RESTART`);
+  });
+
+  const check = () => autoUpdater.checkForUpdates().catch(() => {});
+  check();
+  setInterval(check, 4 * 60 * 60 * 1000); // every 4 hours
+}
+
 app.whenReady().then(() => {
   service.init(app.getPath('userData'), event => {
     if (win && !win.isDestroyed()) win.webContents.send('chat:event', event);
     handleAppSideEffects(event);
   });
+  initAutoUpdater();
   registerIpc();
   createWindow();
 

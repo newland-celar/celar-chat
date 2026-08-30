@@ -1,6 +1,6 @@
 {
   "name": "celar-chat",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Celar Chat — encrypted desktop messenger built on @bdxi/bchat-sdk, styled after celar.network.",
   "private": true,
   "main": "main.js",
@@ -17,10 +17,13 @@
     "predist": "node scripts/make-icon.js",
     "dist": "electron-builder --linux deb",
     "predist:mac": "node scripts/make-icon.js",
-    "dist:mac": "electron-builder --mac"
+    "dist:mac": "electron-builder --mac",
+    "prerelease": "node scripts/make-icon.js",
+    "release": "electron-builder --linux deb --publish always"
   },
   "dependencies": {
     "@bdxi/bchat-sdk": "file:../bchat-sdk",
+    "electron-updater": "^6.6.2",
     "libsodium-wrappers-sumo": "0.7.15"
   },
   "devDependencies": {
@@ -30,6 +33,13 @@
   "build": {
     "appId": "network.celar.chat",
     "productName": "Celar Chat",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "newland-celar",
+        "repo": "celar-chat"
+      }
+    ],
     "files": [
       "main.js",
       "preload.js",
