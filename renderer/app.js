@@ -251,59 +251,93 @@ function closeConversationPane() {
 
 // ---------------------------------------------------------------- messages
 
+/**
+ * Two consecutive text messages from the same side within a minute share one
+ * header line (like most messengers).
+ */
+const GROUP_WINDOW_MS = 60 * 1000;
+let lastListRecord = null; // previous record in the rendered list, for appends
+
+function shouldGroup(prev, record) {
+  return (
+    !!prev &&
+    prev.kind === 'text' &&
+    record.kind === 'text' &&
+    prev.direction === record.direction &&
+    Boolean(prev.synced) === Boolean(record.synced) &&
+    record.at >= prev.at &&
+    record.at - prev.at < GROUP_WINDOW_MS
+  );
+}
+
 function renderMessages(records) {
   const box = $('messages');
   box.replaceChildren();
   let lastDay = '';
+  let prev = null;
   for (const record of records) {
     const day = dayOf(record.at || Date.now());
     if (day !== lastDay) {
       lastDay = day;
       box.appendChild(el('div', 'day-divider', day.toUpperCase()));
+      prev = null; // never group across a day divider
     }
-    box.appendChild(messageNode(record));
+    box.appendChild(messageNode(record, shouldGroup(prev, record)));
+    prev = record.kind === 'text' ? record : null;
   }
+  lastListRecord = prev;
   box.scrollTop = box.scrollHeight;
 }
 
 function appendMessageNode(record) {
   const box = $('messages');
   const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
-  box.appendChild(messageNode(record));
+  box.appendChild(messageNode(record, shouldGroup(lastListRecord, record)));
+  lastListRecord = record.kind === 'text' ? record : null;
   if (nearBottom) box.scrollTop = box.scrollHeight;
 }
 
-function messageNode(record) {
+function messageNode(record, grouped = false) {
   if (record.kind === 'system') {
     return el('div', 'msg-system', `· ${record.text} · ${clockOf(record.at)}`);
   }
 
   const wrap = el('div', `msg ${record.direction === 'out' ? 'out' : 'in'}`);
   wrap.dataset.id = record.id || '';
+  // Delivery-state messages keep their meta even inside a group, so the
+  // spinner / retry control never disappears.
+  const pending = record.direction === 'out' && (record.status === 'sending' || record.status === 'failed');
+  const showMeta = !grouped || pending;
+  wrap.dataset.grouped = grouped ? '1' : '0';
+  if (grouped) wrap.classList.add('grouped');
 
-  const meta = el('div', 'msg-meta');
-  const who = el('b', null, record.direction === 'out' ? (record.synced ? 'YOU · SYNC' : 'YOU') : peerLabel());
-  meta.append(who, ` [${clockOf(record.at)}]`);
+  if (showMeta) {
+    const meta = el('div', 'msg-meta');
+    if (!grouped) {
+      const who = el('b', null, record.direction === 'out' ? (record.synced ? 'YOU · SYNC' : 'YOU') : peerLabel());
+      meta.append(who, ` [${clockOf(record.at)}]`);
+    }
 
-  if (record.direction === 'out' && record.status === 'sending') {
-    // Optimistically rendered; the spinner clears when the snode acks.
-    meta.append(' ');
-    meta.appendChild(el('span', 'msg-spinner'));
-    wrap.classList.add('sending');
-  } else if (record.direction === 'out' && record.status === 'failed') {
-    meta.append(' ');
-    const retryBtn = el('button', 'msg-retry', '✗ FAILED — RETRY');
-    retryBtn.type = 'button';
-    if (record.error) retryBtn.title = record.error;
-    retryBtn.addEventListener('click', () => {
-      window.celar.retry(state.activeId, record.id).catch(err => toast(err.message, true));
-    });
-    meta.appendChild(retryBtn);
-    wrap.classList.add('failed');
-  } else if (record.hash) {
-    meta.append(` ⟦${record.hash}⟧`);
+    if (record.direction === 'out' && record.status === 'sending') {
+      // Optimistically rendered; the spinner clears when the snode acks.
+      meta.append(' ');
+      meta.appendChild(el('span', 'msg-spinner'));
+      wrap.classList.add('sending');
+    } else if (record.direction === 'out' && record.status === 'failed') {
+      meta.append(' ');
+      const retryBtn = el('button', 'msg-retry', '✗ FAILED — RETRY');
+      retryBtn.type = 'button';
+      if (record.error) retryBtn.title = record.error;
+      retryBtn.addEventListener('click', () => {
+        window.celar.retry(state.activeId, record.id).catch(err => toast(err.message, true));
+      });
+      meta.appendChild(retryBtn);
+      wrap.classList.add('failed');
+    } else if (record.hash) {
+      meta.append(` ⟦${record.hash}⟧`);
+    }
+    wrap.appendChild(meta);
   }
-  wrap.appendChild(meta);
 
   if (record.quote && (record.quote.text || record.quote.author)) {
     wrap.appendChild(
@@ -372,6 +406,14 @@ function messageNode(record) {
 
   if (record.reactions && record.reactions.length) wrap.appendChild(reactionsNode(record));
   wrap.appendChild(actionsNode(record));
+
+  if (record.id && record.id === suppressActionsId) {
+    wrap.classList.add('no-actions');
+    wrap.addEventListener('mouseleave', () => {
+      wrap.classList.remove('no-actions');
+      if (suppressActionsId === record.id) suppressActionsId = null;
+    });
+  }
 
   return wrap;
 }
@@ -451,8 +493,13 @@ function reactionsNode(record) {
   return row;
 }
 
+/** After picking a reaction, keep this message's hover bar hidden until the
+ *  pointer leaves it — the chip appearing is the confirmation. */
+let suppressActionsId = null;
+
 async function toggleReaction(record, emoji) {
   if (!state.activeId) return;
+  suppressActionsId = record.id;
   try {
     await window.celar.react(state.activeId, record.id, emoji);
   } catch (err) {
@@ -944,6 +991,16 @@ document.addEventListener('keydown', e => {
   }
 });
 
+// Regaining focus marks the open conversation as read (clears its unread
+// count and, through it, the dock badge).
+window.addEventListener('focus', async () => {
+  if (state.activeId) {
+    await window.celar.listMessages(state.activeId);
+    await refreshState();
+    renderConversations();
+  }
+});
+
 // new conversation
 $('btn-add-convo').addEventListener('click', () => {
   $('add-error').textContent = '';
@@ -1033,26 +1090,32 @@ window.celar.onEvent(async event => {
     return;
   }
 
+  if (event.type === 'toast') {
+    toast(event.text, event.error);
+    return;
+  }
+
+  if (event.type === 'focus-conversation') {
+    // A system notification was clicked: jump to that conversation.
+    openConversation(event.peerId);
+    return;
+  }
+
   if (event.type === 'message-updated') {
     if (event.peerId === state.activeId) {
       const existing = document.querySelector(`#messages [data-id="${event.record.id}"]`);
-      if (existing) existing.replaceWith(messageNode(event.record));
+      if (existing) existing.replaceWith(messageNode(event.record, existing.dataset.grouped === '1'));
     }
     return;
   }
 
   if (event.type === 'message') {
-    if (event.peerId === state.activeId) {
+    if (event.peerId === state.activeId && document.hasFocus()) {
       appendMessageNode(event.record);
       // Mark read (main resets the unread counter on list).
       window.celar.listMessages(event.peerId);
-    } else if (event.record.direction === 'in' && event.record.kind === 'text') {
-      const label = event.conversation && event.conversation.name
-        ? event.conversation.name
-        : shortId(event.peerId);
-      if (document.hidden && Notification.permission === 'granted') {
-        new Notification(`Celar Chat — ${label}`, { body: event.record.text.slice(0, 120) });
-      }
+    } else if (event.peerId === state.activeId) {
+      appendMessageNode(event.record);
     }
     await refreshState();
     renderConversations();
@@ -1071,7 +1134,6 @@ window.celar.onEvent(async event => {
   }
 
   if (app.hasIdentity) {
-    if (Notification.permission === 'default') Notification.requestPermission();
     await enterMain();
   } else {
     showView('onboarding');

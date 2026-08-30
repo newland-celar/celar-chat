@@ -498,6 +498,9 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .msg.out { align-self: flex-end; align-items: flex-end; }
 .msg.in { align-self: flex-start; align-items: flex-start; }
 
+/* follow-up message in a group: no header, tucked closer to the previous one */
+.msg.grouped { margin-top: -7px; }
+
 .msg-meta {
   font-family: var(--mono);
   font-size: 9.5px;
@@ -709,6 +712,7 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   pointer-events: none;
 }
 .msg:hover .msg-actions { opacity: 1; pointer-events: auto; }
+.msg.no-actions .msg-actions { opacity: 0 !important; pointer-events: none !important; }
 .msg-act {
   font-family: var(--mono);
   font-size: 10px;
