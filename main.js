@@ -10,7 +10,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell, Notification } = require('electron');
 const { ChatService } = require('./sdk-service');
 
 // Note: on Wayland sessions Chromium logs a one-line spurious error at GPU
@@ -95,9 +95,53 @@ function registerIpc() {
   }));
 }
 
+/**
+ * App-level reactions to chat events: the launcher/dock unread badge, and a
+ * system notification (with click-to-open) when a message arrives while the
+ * window is not focused.
+ */
+function handleAppSideEffects(event) {
+  if (event.type === 'message' || event.type === 'conversations') {
+    try {
+      app.setBadgeCount(service.getUnreadTotal());
+    } catch {
+      /* not every desktop shell supports badges */
+    }
+  }
+
+  if (
+    event.type === 'message' &&
+    event.record &&
+    event.record.direction === 'in' &&
+    event.record.kind === 'text' &&
+    win &&
+    !win.isDestroyed() &&
+    !win.isFocused() &&
+    Notification.isSupported()
+  ) {
+    const name =
+      (event.conversation && event.conversation.name) || `${event.peerId.slice(0, 8)}…`;
+    const body =
+      (event.record.text && event.record.text.slice(0, 120)) ||
+      (event.record.attachment ? `📎 ${event.record.attachment.fileName}` : 'New message');
+
+    const notification = new Notification({ title: `Celar Chat — ${name}`, body });
+    notification.on('click', () => {
+      if (!win || win.isDestroyed()) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+      win.webContents.send('chat:event', { type: 'focus-conversation', peerId: event.peerId });
+    });
+    notification.show();
+    win.flashFrame(true); // taskbar/urgency hint; clears on focus
+  }
+}
+
 app.whenReady().then(() => {
   service.init(app.getPath('userData'), event => {
     if (win && !win.isDestroyed()) win.webContents.send('chat:event', event);
+    handleAppSideEffects(event);
   });
   registerIpc();
   createWindow();
