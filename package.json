@@ -1,6 +1,6 @@
 {
   "name": "celar-chat",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Celar Chat — encrypted desktop messenger built on @bdxi/bchat-sdk, styled after celar.network.",
   "private": true,
   "main": "main.js",
