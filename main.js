@@ -10,7 +10,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, BrowserWindow, dialog, ipcMain, shell, Notification } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell, Menu, MenuItem, Notification } = require('electron');
 const { ChatService } = require('./sdk-service');
 
 // Note: on Wayland sessions Chromium logs a one-line spurious error at GPU
@@ -44,6 +44,43 @@ function createWindow() {
   // Message content must never be able to navigate the window or spawn one.
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', e => e.preventDefault());
+
+  // Electron ships no context menu at all — build a native one: spelling
+  // suggestions in the composer, cut/copy/paste/select-all where they apply.
+  win.webContents.on('context-menu', (_event, params) => {
+    const menu = new Menu();
+
+    for (const suggestion of (params.dictionarySuggestions || []).slice(0, 5)) {
+      menu.append(
+        new MenuItem({
+          label: suggestion,
+          click: () => win.webContents.replaceMisspelling(suggestion),
+        })
+      );
+    }
+    if (params.misspelledWord) {
+      menu.append(
+        new MenuItem({
+          label: 'Add to dictionary',
+          click: () => win.webContents.session.addWordToSpellCheckerDictionary(params.misspelledWord),
+        })
+      );
+      menu.append(new MenuItem({ type: 'separator' }));
+    }
+
+    if (params.isEditable) {
+      menu.append(new MenuItem({ role: 'cut', enabled: params.editFlags.canCut }));
+    }
+    if (params.isEditable || params.selectionText) {
+      menu.append(new MenuItem({ role: 'copy', enabled: params.editFlags.canCopy }));
+    }
+    if (params.isEditable) {
+      menu.append(new MenuItem({ role: 'paste', enabled: params.editFlags.canPaste }));
+      menu.append(new MenuItem({ role: 'selectAll' }));
+    }
+
+    if (menu.items.length) menu.popup();
+  });
 
   win.on('closed', () => {
     win = null;

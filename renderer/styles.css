@@ -487,19 +487,22 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: 22px 20px;
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 2px;
 }
 
-.msg { display: flex; flex-direction: column; max-width: 68%; gap: 4px; min-width: 0; }
+.msg { display: flex; flex-direction: column; max-width: 68%; gap: 2px; min-width: 0; margin-top: 6px; }
 .msg > * { max-width: 100%; min-width: 0; }
 .msg.out { align-self: flex-end; align-items: flex-end; }
 .msg.in { align-self: flex-start; align-items: flex-start; }
+.msg:first-child { margin-top: 0; }
 
-/* follow-up message in a group: no header, tucked closer to the previous one */
-.msg.grouped { margin-top: -7px; }
+/* follow-up message in a group: no header, tucked right under the previous one */
+.msg.grouped { margin-top: 0; }
+
+.day-divider + .msg { margin-top: 4px; }
 
 .msg-meta {
   font-family: var(--mono);
@@ -726,19 +729,31 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .msg-act:hover { color: var(--accent-bright); border-color: var(--accent); }
 .msg-act-emoji { font-size: 12px; padding: 3px 6px; letter-spacing: 0; }
 
-/* reaction chips under a message */
-.msg-reactions { display: flex; gap: 5px; flex-wrap: wrap; }
+/* reaction chips — pills rendered inside the message bubble */
+.msg-reactions { display: flex; gap: 4px; flex-wrap: wrap; }
+.msg-bubble .msg-reactions { margin-top: 7px; }
 .react-chip {
-  font-family: var(--mono);
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--line-strong);
   border-radius: 999px;
-  background: var(--bg-raise);
-  color: var(--ink);
-  padding: 2px 9px;
+  background: var(--bg-raise-2);
+  padding: 3px 9px;
+  animation: chip-pop 0.14s ease-out;
+  transition: border-color 0.12s, transform 0.08s;
 }
 .react-chip:hover { border-color: var(--accent); }
-.react-chip.mine { border-color: var(--accent); background: var(--accent-soft); }
+.react-chip:active { transform: scale(0.94); }
+.react-chip-emoji { font-size: 14px; line-height: 1; }
+.react-chip.mine {
+  background: linear-gradient(180deg, var(--accent-bright), var(--accent));
+  border-color: transparent;
+}
+@keyframes chip-pop {
+  from { transform: scale(0.6); opacity: 0.4; }
+  to { transform: scale(1); opacity: 1; }
+}
 
 /* live link unfurl card in the composer */
 .composer-preview {
@@ -1015,6 +1030,45 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 }
 .copyrow code.blurred { color: var(--ink-dim); }
 .copyrow .text-input { flex: 1; width: auto; }
+
+/* message right-click menu */
+.msg-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 190px;
+  background: var(--bg-raise-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.msg-menu-emojis {
+  display: flex;
+  gap: 2px;
+  padding-bottom: 7px;
+  margin-bottom: 5px;
+  border-bottom: 1px solid var(--line);
+}
+.msg-menu-emoji {
+  font-size: 17px;
+  line-height: 1;
+  padding: 5px 6px;
+  border-radius: 6px;
+}
+.msg-menu-emoji:hover { background: var(--accent-soft); }
+.msg-menu-item {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+}
+.msg-menu-item:hover { background: var(--accent-soft); color: var(--accent-bright); }
 
 .toast {
   position: fixed;

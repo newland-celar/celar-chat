@@ -374,7 +374,11 @@ function messageNode(record, grouped = false) {
     }
   }
 
-  if (record.text) wrap.appendChild(bubbleNode(record.text));
+  let bubble = null;
+  if (record.text) {
+    bubble = bubbleNode(record.text);
+    wrap.appendChild(bubble);
+  }
 
   for (const a of record.attachments || []) {
     const bits = ['[ATTACHMENT]', a.kind, a.fileName && `"${a.fileName}"`, a.size && `${(a.size / 1024).toFixed(1)} KB`]
@@ -404,7 +408,13 @@ function messageNode(record, grouped = false) {
     wrap.appendChild(loadBtn);
   }
 
-  if (record.reactions && record.reactions.length) wrap.appendChild(reactionsNode(record));
+  if (record.reactions && record.reactions.length) {
+    const row = reactionsNode(record);
+    // Telegram-style: chips live inside the bubble; fall back to below it for
+    // attachment-only or jumbo-emoji messages that have no regular bubble.
+    if (bubble && !bubble.classList.contains('emoji-only')) bubble.appendChild(row);
+    else wrap.appendChild(row);
+  }
   wrap.appendChild(actionsNode(record));
 
   if (record.id && record.id === suppressActionsId) {
@@ -414,6 +424,14 @@ function messageNode(record, grouped = false) {
       if (suppressActionsId === record.id) suppressActionsId = null;
     });
   }
+
+  // Right-click: message-specific menu (suppresses the native one here only;
+  // the composer and plain selections keep the system menu).
+  wrap.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    e.stopPropagation();
+    openMessageMenu(record, e.clientX, e.clientY);
+  });
 
   return wrap;
 }
@@ -457,19 +475,69 @@ function peerLabel() {
   return name || 'PEER';
 }
 
-/** Hover bar: reply + quick reactions. */
+// -------------------------------------------------- message context menu
+
+function closeMessageMenu() {
+  $('msg-menu').hidden = true;
+}
+
+function openMessageMenu(record, x, y) {
+  const menu = $('msg-menu');
+  menu.replaceChildren();
+
+  // Quick reactions row.
+  const emojiRow = el('div', 'msg-menu-emojis');
+  for (const emoji of REACTION_EMOJIS) {
+    const btn = el('button', 'msg-menu-emoji', emoji);
+    btn.type = 'button';
+    btn.addEventListener('click', () => {
+      closeMessageMenu();
+      toggleReaction(record, emoji);
+    });
+    emojiRow.appendChild(btn);
+  }
+  menu.appendChild(emojiRow);
+
+  const item = (label, onClick) => {
+    const btn = el('button', 'msg-menu-item', label);
+    btn.type = 'button';
+    btn.addEventListener('click', () => {
+      closeMessageMenu();
+      onClick();
+    });
+    menu.appendChild(btn);
+  };
+
+  item('↳ REPLY', () => setReplyTo(record));
+  const selection = String(window.getSelection() || '').trim();
+  if (selection || record.text) {
+    item(selection ? 'COPY SELECTION' : 'COPY TEXT', () =>
+      copyText(selection || record.text, 'MESSAGE')
+    );
+  }
+  if (record.preview && record.preview.url) {
+    item('COPY LINK', () => copyText(record.preview.url, 'LINK'));
+  }
+
+  // Position, clamped to the viewport.
+  menu.hidden = false;
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = `${Math.min(x, window.innerWidth - rect.width - 8)}px`;
+  menu.style.top = `${Math.min(y, window.innerHeight - rect.height - 8)}px`;
+}
+
+document.addEventListener('click', e => {
+  const menu = $('msg-menu');
+  if (!menu.hidden && !menu.contains(e.target)) closeMessageMenu();
+});
+
+/** Hover bar: reply only — reactions live in the right-click menu. */
 function actionsNode(record) {
   const bar = el('div', 'msg-actions');
   const replyBtn = el('button', 'msg-act', '↳ REPLY');
   replyBtn.type = 'button';
   replyBtn.addEventListener('click', () => setReplyTo(record));
   bar.appendChild(replyBtn);
-  for (const emoji of REACTION_EMOJIS) {
-    const btn = el('button', 'msg-act msg-act-emoji', emoji);
-    btn.type = 'button';
-    btn.addEventListener('click', () => toggleReaction(record, emoji));
-    bar.appendChild(btn);
-  }
   return bar;
 }
 
@@ -484,10 +552,14 @@ function reactionsNode(record) {
     byEmoji.set(r.emoji, entry);
   }
   for (const [emoji, entry] of byEmoji) {
-    const chip = el('button', 'react-chip' + (entry.mine ? ' mine' : ''), entry.count > 1 ? `${emoji} ${entry.count}` : emoji);
+    const chip = el('button', 'react-chip' + (entry.mine ? ' mine' : ''));
     chip.type = 'button';
+    chip.appendChild(el('span', 'react-chip-emoji', emoji));
     chip.title = entry.mine ? 'Click to remove your reaction' : 'Click to react too';
-    chip.addEventListener('click', () => toggleReaction(record, emoji));
+    chip.addEventListener('click', e => {
+      e.stopPropagation();
+      toggleReaction(record, emoji);
+    });
     row.appendChild(chip);
   }
   return row;
@@ -703,6 +775,10 @@ function closeEmojiPanel() {
 // ---------------------------------------------------------------- composer
 
 const composerInput = $('composer-input');
+
+// A scroll under an open message menu would leave it floating over the
+// wrong message.
+$('messages').addEventListener('scroll', closeMessageMenu);
 
 // ------------------------------------------------- live link unfurling
 
@@ -988,6 +1064,7 @@ document.addEventListener('keydown', e => {
     closeModals();
     clearReplyTo();
     closeEmojiPanel();
+    closeMessageMenu();
   }
 });
 
