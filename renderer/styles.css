@@ -978,20 +978,58 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   padding-bottom: 8px;
 }
 .composer-row { display: flex; gap: 12px; align-items: flex-end; }
-.composer textarea {
+
+/* Rich composer: contenteditable editor hosting real code-block widgets. */
+.composer-input {
   flex: 1;
+  min-height: 44px;
+  max-height: 220px;
+  overflow-y: auto;
   background: var(--bg-raise);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  color: var(--ink);
-  font: inherit;
   padding: 11px 16px;
-  outline: none;
-  resize: none;
-  max-height: 160px;
+  font: inherit;
   line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  outline: none;
+  cursor: text;
 }
-.composer textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.composer-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.composer-input:empty::before {
+  content: attr(data-placeholder);
+  color: var(--ink-faint);
+  pointer-events: none;
+}
+
+/* the in-composer code-block widget */
+.composer-input .cb-block {
+  display: block;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  margin: 7px 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--accent-bright);
+  white-space: pre;
+  overflow-x: auto;
+  position: relative;
+}
+.composer-input .cb-block:not([data-lang=''])::before {
+  content: attr(data-lang);
+  position: absolute;
+  top: 3px;
+  right: 9px;
+  font-size: 8.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  pointer-events: none;
+}
 
 /* ================================================ modals + toast */
 

@@ -163,7 +163,8 @@
               <button type="button" class="emoji-toggle" id="btn-attach" title="Attach a file (images any size, other files up to 45 KB)">📎</button>
               <input type="file" id="file-input" hidden />
               <button type="button" class="emoji-toggle" id="btn-emoji" title="Insert emoji">☺</button>
-              <textarea id="composer-input" rows="1" placeholder="Write a message…" spellcheck="true"></textarea>
+              <div class="composer-input" id="composer-input" contenteditable="true"
+                   data-placeholder="Write a message…" spellcheck="true"></div>
               <button type="submit" class="btn btn-solid" id="btn-send">SEND →</button>
             </div>
             <div class="emoji-panel" id="emoji-panel" hidden></div>

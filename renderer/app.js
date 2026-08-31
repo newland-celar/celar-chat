@@ -758,14 +758,8 @@ function buildEmojiPanel() {
 }
 
 function insertAtCursor(text) {
-  const input = composerInput;
-  const start = input.selectionStart ?? input.value.length;
-  const end = input.selectionEnd ?? start;
-  input.value = input.value.slice(0, start) + text + input.value.slice(end);
-  const caret = start + text.length;
-  input.setSelectionRange(caret, caret);
-  input.dispatchEvent(new Event('input'));
-  input.focus();
+  composerInput.focus();
+  document.execCommand('insertText', false, text);
 }
 
 function closeEmojiPanel() {
@@ -832,7 +826,7 @@ function resetUnfurl() {
 }
 
 async function updateComposerUnfurl() {
-  const url = composerFirstUrl(composerInput.value);
+  const url = composerFirstUrl(serializeComposer());
 
   if (!url) {
     unfurl.url = null;
@@ -858,7 +852,7 @@ async function updateComposerUnfurl() {
 
   try {
     const data = await window.celar.fetchPreview(url);
-    if (mySeq !== unfurl.seq || composerFirstUrl(composerInput.value) !== url) return; // stale
+    if (mySeq !== unfurl.seq || composerFirstUrl(serializeComposer()) !== url) return; // stale
     if (data) {
       unfurl.data = data;
       showComposerPreview(composerCardInfo(data));
@@ -954,23 +948,159 @@ document.addEventListener('click', e => {
   if (!panel.hidden && !panel.contains(e.target) && e.target !== $('btn-emoji')) closeEmojiPanel();
 });
 
+/**
+ * Rich composer: a contenteditable editor in which ``` + Shift+Enter turns
+ * into a real code-block widget (styled region, caret inside), like Claude's
+ * input box. On send the content serializes back to plain ```fenced``` text
+ * for the wire.
+ */
+
+/**
+ * Text of a DOM subtree with line breaks preserved: the browser represents
+ * newlines as <br> (and sometimes wraps lines in <div>/<p>), so textContent
+ * alone would flatten multi-line code onto one line.
+ */
+function nodeText(node) {
+  if (node.nodeType === Node.TEXT_NODE) return node.data;
+  if (node.nodeName === 'BR') return '\n';
+  let out = '';
+  for (const child of node.childNodes) out += nodeText(child);
+  if (/^(DIV|P)$/.test(node.nodeName) && out && !out.endsWith('\n')) out += '\n';
+  return out;
+}
+
+/** Editor content → plain markdown-ish text. */
+function serializeComposer() {
+  let out = '';
+  for (const node of composerInput.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      out += node.data;
+    } else if (node.nodeName === 'BR') {
+      out += '\n';
+    } else if (node.classList && node.classList.contains('cb-block')) {
+      const lang = node.dataset.lang || '';
+      let code = '';
+      for (const child of node.childNodes) code += nodeText(child);
+      code = code.replace(/\n+$/, '');
+      if (out && !out.endsWith('\n')) out += '\n';
+      out += `\`\`\`${lang}\n${code}\n\`\`\`\n`;
+    } else {
+      out += nodeText(node); // stray element from an odd paste
+    }
+  }
+  return out.replace(/\n$/, '');
+}
+
+/** The code block containing the caret, if any. */
+function caretBlock() {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return null;
+  let node = sel.anchorNode;
+  if (!node) return null;
+  if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+  const block = node && node.closest ? node.closest('.cb-block') : null;
+  return block && composerInput.contains(block) ? block : null;
+}
+
+/** Caret sits at the end of a top-level "```lang" line? Return its info. */
+function fenceLineAtCaret() {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
+  const node = sel.anchorNode;
+  if (!node || node.nodeType !== Node.TEXT_NODE || node.parentNode !== composerInput) return null;
+  const upto = node.data.slice(0, sel.anchorOffset);
+  const lineStart = upto.lastIndexOf('\n') + 1;
+  const match = upto.slice(lineStart).match(/^```([A-Za-z0-9+#-]*)$/);
+  return match ? { node, lineStart, caret: sel.anchorOffset, lang: match[1] } : null;
+}
+
+function placeCaret(node, offset) {
+  const range = document.createRange();
+  range.setStart(node, offset);
+  range.collapse(true);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+/** Swap the typed ``` fence for a real code-block widget, caret inside. */
+function convertFenceToBlock(info) {
+  const { node, lineStart, caret, lang } = info;
+  const after = node.data.slice(caret);
+  node.data = node.data.slice(0, lineStart);
+
+  const block = el('pre', 'cb-block');
+  block.dataset.lang = (lang || '').toLowerCase();
+  block.appendChild(document.createElement('br')); // caret anchor while empty
+
+  composerInput.insertBefore(block, node.nextSibling);
+  if (after) composerInput.insertBefore(document.createTextNode(after), block.nextSibling);
+  // Guarantee a place to continue typing after the block.
+  if (!block.nextSibling) composerInput.appendChild(document.createElement('br'));
+
+  placeCaret(block, 0);
+  composerInput.dispatchEvent(new Event('input'));
+}
+
 composerInput.addEventListener('input', () => {
-  composerInput.style.height = 'auto';
-  composerInput.style.height = `${Math.min(composerInput.scrollHeight, 160)}px`;
   clearTimeout(unfurl.timer);
   unfurl.timer = setTimeout(updateComposerUnfurl, 450);
 });
 
 composerInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    $('composer').requestSubmit();
+  if (e.key === 'Backspace') {
+    const block = caretBlock();
+    if (block && block.textContent === '') {
+      // Deleting inside an empty block removes the block itself.
+      e.preventDefault();
+      const range = document.createRange();
+      range.setStartBefore(block);
+      range.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      block.remove();
+      composerInput.dispatchEvent(new Event('input'));
+    }
+    return;
   }
+
+  if (e.key !== 'Enter') return;
+
+  // Inside a code block, Enter (with or without Shift) is a newline.
+  if (caretBlock()) {
+    e.preventDefault();
+    document.execCommand('insertText', false, '\n');
+    return;
+  }
+
+  if (e.shiftKey) {
+    const fence = fenceLineAtCaret();
+    if (fence) {
+      // ```lang + Shift+Enter → code-block widget.
+      e.preventDefault();
+      convertFenceToBlock(fence);
+    } else {
+      e.preventDefault();
+      document.execCommand('insertLineBreak');
+    }
+    return;
+  }
+
+  e.preventDefault();
+  $('composer').requestSubmit();
+});
+
+// Paste as plain text — no foreign markup enters the editor.
+composerInput.addEventListener('paste', e => {
+  e.preventDefault();
+  const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+  if (text) document.execCommand('insertText', false, text);
 });
 
 $('composer').addEventListener('submit', async e => {
   e.preventDefault();
-  const text = convertShortcodes(composerInput.value);
+  const text = convertShortcodes(serializeComposer());
   if (!state.activeId) return;
   closeEmojiPanel();
 
@@ -980,8 +1110,7 @@ $('composer').addEventListener('submit', async e => {
     sendBtnA.disabled = true;
     try {
       await window.celar.sendAttachment(state.activeId, pendingFile, text.trim());
-      composerInput.value = '';
-      composerInput.style.height = 'auto';
+      composerInput.replaceChildren();
       clearPendingFile();
       clearReplyTo();
       resetUnfurl();
@@ -1014,8 +1143,7 @@ $('composer').addEventListener('submit', async e => {
     // The main process broadcasts an event for every appended record —
     // including this one — so the event handler does the rendering.
     await window.celar.sendMessage(state.activeId, text, state.replyTo ? state.replyTo.id : undefined, preview);
-    composerInput.value = '';
-    composerInput.style.height = 'auto';
+    composerInput.replaceChildren();
     clearReplyTo();
     resetUnfurl();
   } catch (err) {
